@@ -1,0 +1,65 @@
+`include "constants.vams"
+`include "disciplines.vams"
+
+module counter_NAND_tb_3bits (A, B, C, CLK, VDD, VSS);
+  output A, B, C;        electrical A, B, C;
+  input  CLK;            electrical CLK;
+  input  VDD, VSS;       electrical VDD, VSS;
+
+  // Parámetros temporales
+  parameter real tr   = 1p;   // transición de salida
+  parameter real tdA  = 0;    // skew opcional en A (MSB)
+  parameter real tdB  = 0;    // skew opcional en B
+  parameter real tdC  = 0;    // skew opcional en C (LSB)
+  parameter real vtol = 1m;
+  parameter real ttol = 1p;
+
+  // Estado interno
+  integer phase;                // 0..7
+  integer a_bit, b_bit, c_bit;  // A=MSB, C=LSB
+  real a_tgt, b_tgt, c_tgt;     // niveles objetivo (en volt)
+  real Vth;                     // umbral dinámico
+
+  analog begin
+    $bound_step(tr/20);
+
+    // Umbral dinámico: mitad de VDD–VSS
+    Vth = V(VDD, VSS)/2.0;
+
+    // ===== Inicial =====
+    @(initial_step) begin
+      phase = 0;
+      a_bit = 0; b_bit = 0; c_bit = 0;
+      a_tgt = V(VSS); b_tgt = V(VSS); c_tgt = V(VSS);
+    end
+
+    // Contribuciones continuas (suavizan bordes y ayudan convergencia)
+    V(A) <+ transition(a_tgt, tdA, tr);
+    V(B) <+ transition(b_tgt, tdB, tr);
+    V(C) <+ transition(c_tgt, tdC, tr);
+
+    // ===== Flanco de reloj =====
+    @(cross(V(CLK, VSS) - Vth, +1, ttol, vtol)) begin
+      phase = phase + 1;
+      if (phase > 7) phase = 0;
+
+      // LUT de 8 estados (A,B,C): 000,010,001,011,100,110,101,111
+      case (phase)
+        0: begin a_bit=0; b_bit=0; c_bit=0; end // 000
+        1: begin a_bit=0; b_bit=1; c_bit=0; end // 010
+        2: begin a_bit=0; b_bit=0; c_bit=1; end // 001
+        3: begin a_bit=0; b_bit=1; c_bit=1; end // 011
+        4: begin a_bit=1; b_bit=0; c_bit=0; end // 100
+        5: begin a_bit=1; b_bit=1; c_bit=0; end // 110
+        6: begin a_bit=1; b_bit=0; c_bit=1; end // 101
+        7: begin a_bit=1; b_bit=1; c_bit=1; end // 111
+        default: begin a_bit=0; b_bit=0; c_bit=0; end
+      endcase
+
+      // Actualiza niveles objetivo usando VDD/VSS reales
+      a_tgt = (a_bit != 0) ? V(VDD) : V(VSS);
+      b_tgt = (b_bit != 0) ? V(VDD) : V(VSS);
+      c_tgt = (c_bit != 0) ? V(VDD) : V(VSS);
+    end
+  end
+endmodule
